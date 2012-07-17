@@ -6,3 +6,6 @@ Building the project:
 Since Arbitrage is written in python, there's very little setup that needs to be done to make the system install and run. One thing that does need to be done, though, is to run the configuration script to handle the setup and installation
 
 ...or, rather, that's what's going to happen. Right now, there's nothing here yet. We all gotta start somewhere, right?
+
+
+This code is licensed under the terms of the MIT license. You should have received a copy of this license in an included file named COPYING. If you did not receive this file, you may obtain a copy of the license at http://opensource.org/licenses/MIT
