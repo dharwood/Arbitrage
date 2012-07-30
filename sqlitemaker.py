@@ -7,9 +7,12 @@
 #copy of the license at http://opensource.org/licenses/MIT
 #####
 
+#This script is for setting things up if the user is going to be using sqlite for their database
+#later, I can add in things to make mysql and postgres work in other scripts, but this will do for now
+
 import sqlite3
 
-conn = sqlite3.connect(%LOCATION_NAME%)
+conn = sqlite3.connect("./database") #placeholder path
 
 conn.executescript("""
         create table player( idnum, name, vehicle, money, location, turns );
