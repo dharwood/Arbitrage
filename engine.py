@@ -45,11 +45,13 @@ class engine:
             self.changeloc(player, int(action[3:]))
         else:
             actionlists.perform(player.getaction(action), player)
-        self.turnuse()
+        self.turnuse(player)
         #OK, so, given that the action lists aren't really supposed to have access the specific player performing the action, is there a way I can pull out the action that I want to have happen rather than trying to call that code in place? is there something with virtual functions or lambda calculus I can use?
         pass #gonna have to work more on this...
 
     def changelocation(self, player, movingto):
+        if self.turnuse():
+            #this needs to be done...
         locID = player.getloc()
         player.setloc(movingto)
         self.activeloc[locID].removeplayer(player)
@@ -65,5 +67,11 @@ class engine:
             else:
                 self.activeloc[movingto] = #sql for areas needs to go here
         self.activeloc[locID].addplayer(player)
-        self.turnuse()
+        self.turnuse(player)
 
+    def turnuse(self, player, turns=1):
+        if player.turns < turns:
+            player.turns -= turns
+            return True
+        else:
+            return False
