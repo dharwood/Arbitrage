@@ -7,7 +7,7 @@
 #copy of the license at http://opensource.org/licenses/MIT
 #####
 
-import select, socket, time, collections, sys
+import select, time, collections, sys
 
 class engine:
 
@@ -17,28 +17,26 @@ class engine:
         self.activenodes = dict() #objectID -> object def
         self.activeloc = dict() #locationID -> location def
 
-    def addplayer(self, player):
+    def addplayer(self, player):#this whole function needs some more work since I'm not using sql to store player info anymore but am instead using memory (though I might go back to sql if keeping track of this in memory is too painful), can store player info in a dict when they're not active (and, for that matter, a dict when they are), now that I think about it, do I really need to have an activeplayers list? it was originally put in to keep active players in memory an avoid having to update sql tables all the time, but if I'm not using sql anymore...though it would probably still be good to have something set up to keep track of who is logged in and who isn't to keep users from trying to manipulate other people's accounts
         self.activeusers.append(player)
-        locID = player.getloc()
-        if locID not in self.activeloc():
-            if locID > 1000000:
-                self.activeloc[locID] = #sql for nodes needs to go here
-            else:
-                self.activeloc[locID] = #sql for areas needs to go here
-        self.activeloc[locID].addplayer(player)
-        self.buildactions(player)
+#        locID = player.getloc()
+#        if locID not in self.activeloc():
+#            if locID > 1000000:
+#                self.activeloc[locID] = #sql for nodes needs to go here
+#            else:
+#                self.activeloc[locID] = #sql for areas needs to go here
+#        self.buildactions(player) #this will now work by storing the available actions in the player's "file" and just reading them as usual from there when a player logs in
 
-    def removeplayer(self, player):
+    def removeplayer(self, player): #it feels like there should be more to this, but if everything is starting out instantiated
         self.activeusers.remove(player)
-        locID = player.getloc()
-        if locID not in self.activeloc:
-            if
 
-    def buildactions(self, player): #the way this turned out, it's realy just a helper function to act as a go-between
-        locID = player.getloc()
-        location = self.activeloc[locID]
-        player.setactions(location.getactions())
-        #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then return that list to the player (should I return the list, or maybe just a whole new player object?)
+    def buildactions(self, player):
+        location = self.activeloc[player.getloc()]
+        #need to go through every object, node, and warp in the area (or just allow for purchasing or leaving if at a node) in order to make this work. there's also the non-loaction specific stuff (send messages, open menu, etc), but I think most of that goes into a different function(s)
+        actions = location.buildactions(player.turns) #this should be a list of tuples with format ("identifier", "description")
+        actions.append(player.buildactions()) #I know I'm breaking the standard of making pulling info as "getfoo" but I want to use getactions to retrieve the list of actions that's already built, not build the new list of actions
+        player.setactions(actions)
+        #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
 
     def performactions(self, player, action):
         if action.startswith('loc'):
@@ -51,7 +49,7 @@ class engine:
 
     def changelocation(self, player, movingto):
         if self.turnuse():
-            #this needs to be done...
+            #this needs to be done. what this thing is going to be is either an acceptance and action performed, or a rejection note...though I suppose I could set it up so that the only actions that appear are those for which the player has enough turns left. HAve to move the actionlist-building logic back into the engine, though, which might be for the better
         locID = player.getloc()
         player.setloc(movingto)
         self.activeloc[locID].removeplayer(player)
