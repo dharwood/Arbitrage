@@ -39,17 +39,16 @@ class engine:
         #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
 
     def performactions(self, player, action):
-        if action.startswith('loc'):
+        if action.startswith('loc'): #when changing location
             self.changeloc(player, int(action[3:]))
         else:
             actionlists.perform(player.getaction(action), player)
-        self.turnuse(player)
         #OK, so, given that the action lists aren't really supposed to have access the specific player performing the action, is there a way I can pull out the action that I want to have happen rather than trying to call that code in place? is there something with virtual functions or lambda calculus I can use?
         pass #gonna have to work more on this...
 
     def changelocation(self, player, movingto):
-        if self.turnuse():
-            #this needs to be done. what this thing is going to be is either an acceptance and action performed, or a rejection note...though I suppose I could set it up so that the only actions that appear are those for which the player has enough turns left. HAve to move the actionlist-building logic back into the engine, though, which might be for the better
+        if not self.turnuse(): #if the player doesn't have enough turns left
+            return 'Action not completed: insufficient turns.'
         locID = player.getloc()
         player.setloc(movingto)
         self.activeloc[locID].removeplayer(player)
@@ -65,11 +64,10 @@ class engine:
             else:
                 self.activeloc[movingto] = #sql for areas needs to go here
         self.activeloc[locID].addplayer(player)
-        self.turnuse(player)
 
-    def turnuse(self, player, turns=1):
-        if player.turns < turns:
-            player.turns -= turns
-            return True
-        else:
-            return False
+#    def turnuse(self, player, turns=1):
+#        if player.turns < turns:
+#            player.turns -= turns
+#            return True
+#        else:
+#            return False

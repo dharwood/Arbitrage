@@ -13,6 +13,18 @@
 
 import time
 
+class node:
+
+    def __init__(self, ntype, name, buyrates, sellrates, size):#int, string, dict, dict, int
+        self.ntype = ntype
+        self.name = name
+        self.buyrates = buyrates
+        self.sellrates = sellrates
+        self.size = size
+
+    def buying(self, resource, quantity):
+        #this is for the player buying from the node
+
 nodeinfofile = open("nodeinfo") #this is just a placeholder for now, will be chnaged when the configuration stuff is done
 
 #this would be where the thing to generate a node belongs, depending on parameters in the nodeinfo file
