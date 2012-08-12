@@ -16,4 +16,7 @@ class Session:
         self.turns = turns
         self.ship = vehicle
         self.money = money
-    
+        self.resourcelist = [0,0,0] #this might take some rethinking...
+        self.freeholds = 50 #this is something that will be changable with upgrades (eventually)
+
+

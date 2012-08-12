@@ -8,8 +8,9 @@
 #####
 
 import asyncore, socket, asynchat
+from . import engine, session
 
-class server(asynchat.async_chat):
+class server(asyncore.dispatcher):
 
     def __init__(self, host, port):
         asynchat.async_chat.__init__(self)
