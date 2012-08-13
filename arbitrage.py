@@ -12,11 +12,10 @@ import sys, time, select, collections, socket, asyncore, asynchat, random, threa
 #=====Area class=====
 class Area:
     
-    def __init__(self, nodes, objects, connections, player):
+    def __init__(self, nodes, objects, connections): #list, list, list
         self.nodes = nodes.split(',')
         self.objects = objects.split(',')
         self.connections = connections.split(',')
-        self.players = [player]
 
     def buildactions(self, turns):
         out = list()
@@ -40,9 +39,6 @@ class Node:
         self.sellrates = sellrates
         self.size = size
 
-    def buying(self, resource, quantity): pass
-        #this is for the player buying from the node
-
 #nodeinfofile = open("nodeinfo") #this is just a placeholder for now, will be chnaged when the configuration stuff is done
 
 #this would be where the thing to generate a node belongs, depending on parameters in the nodeinfo file
@@ -61,12 +57,6 @@ class Server(asyncore.dispatcher):
         self.bind((host, port))
         self.listen(5)
 
-    def collect_incoming_data(self, data):
-        self.inputbuf.append(data)
-
-    def found_terminator(self):
-        pass #need to do stuff here for when a player sends a message that isn't a connection
-
     def handle_accepted(self, sock, addr):
         pass #need to do stuff here, too, and this area is for dealing with incoming connections
     #here's what needs to happen for this part: get player info, create a session object, make sure the player socket is in the map, store everything and put it to use as needed
@@ -80,20 +70,18 @@ class Server(asyncore.dispatcher):
     #here's something to think about: the session objects for players, why don't I just make them extended async_chat objects? that way, I can hold all of the player info and trust them to take care of themselves when the player sends an action/connects/quits/whatever. There's probably some reason this is going to fail horibly, but I'll worry about that when I get there since nothing seems to come to mind right now about how things could go wrong...
 
 #=====Session class=====
-class Session:
+class Player:
     
-    def __init__(self, playerID, playerName, location, turns, vehicle, money):
+    def __init__(self, playerID, playerName, location, turns, money):
         self.playerID = playerID
         self.playerName = playerName
         self.location = location
         self.turns = turns
-        self.ship = vehicle
         self.money = money
         self.resourcelist = [0,0,0] #this might take some rethinking...
-        self.freeholds = 50 #this is something that will be changable with upgrades (eventually)
-
-    state = "" #this holds the last message that was sent to the player
-    message = "" #small response to the player doing something that doesn't need everything redone ("Insufficient funds", for example)
+        self.freeholds = 50 #default, this is something that will be changable with upgrades (eventually)
+        self.state = "" #this holds the last message that was sent to the player
+        self.message = "" #small response to the player doing something that doesn't need everything redone ("Insufficient funds", for example)
 
 #=====functions=====
 #def __init__(self):
@@ -163,9 +151,16 @@ def priceupdate():
     t = Timer(3600.0, priceupdate)
     t.start()
 
+def turnadd():
+    for i in players:
+        i.turns += 1
+    t = Timer(900.0, turnadd) #every 15 minutes, add turns
+    t.start()
+
 if __name__ == '__main__': pass
 #    for i in range(50): #this seems like a good number to start with
         #steps here: generate area, generate 0-3 (-ish) nodes in that area, then build in...oh let's say 5-10 connections to other areas (should I worry about areas being unreachable? could go through and do a count after the first run)
  #       a = area.area()
  #       for j in random.randrange(3): #this is where the 0-3 nodes are created and placed in the area
  #           n = node.node(random.randint(0,3),"Node " + str(i) + "-" + str(j), )
+ #       asyncore.loop() #to get the server running and get the game going
