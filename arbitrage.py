@@ -7,7 +7,10 @@
 #copy of the license at http://opensource.org/licenses/MIT
 #####
 
-import sys, time, select, collections, socket, asyncore, asynchat, random, threading
+import sys, time, random, threading
+from twisted.internet.protocol import Factory
+from twisted.protocols.telnet import Telnet
+from twisted.internet import reactor
 
 #=====Area class=====
 class Area:
@@ -46,38 +49,121 @@ class Node:
 #that way, I only have to read in the file once, and it's one less thing to worry about having to import or deal with from another file
 
 #=====Server class=====
-class Server(asyncore.dispatcher):
+#class Server(asyncore.dispatcher):
+#
+#    def __init__(self, host, port):
+#        asyncore.dispatcher.__init__(self)
+#        self.inputbuf = list()
+#        self.set_terminator(b"\r\n\r\n")
+#        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
+#        self.set_reuse_addr()
+#        self.bind((host, port))
+#        self.listen(5)
+#
+#    def handle_accepted(self, sock, addr):
+#        login = Session()
+#        self.loggingin.append(Session())
+#        pass #need to do stuff here, too, and this area is for dealing with incoming connections
+#    #here's what needs to happen for this part: get player info, create a session object, make sure the player socket is in the map, store everything and put it to use as needed
+#
+#    def handle_closed(self):
+#        pass #need to remove the session and player info from the list and do all of the standard closing things to make this happen ALSO, THIS FUNCTION NEEDS TO GO INTO THE VARIOUS ASYNC_CHAT OBJECTS, THIS HAPPENS HERE WHEN THE SERVER SHUTS DOWN AT THE END OF THE GAME
+#
+#    def handle_read(self):
+#        pass #I'm really just kinda creating an interface here, aren't I?
 
-    def __init__(self, host, port):
-        asynchat.async_chat.__init__(self)
-        self.inputbuf = list()
-        self.set_terminator(b"\r\n\r\n")
-        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.set_reuse_addr()
-        self.bind((host, port))
-        self.listen(5)
+#forget this. python 3 support or no, I'm moving to using Twisted
 
-    def handle_accepted(self, sock, addr):
-        pass #need to do stuff here, too, and this area is for dealing with incoming connections
-    #here's what needs to happen for this part: get player info, create a session object, make sure the player socket is in the map, store everything and put it to use as needed
+#=====WorldServ class=====
 
-    def handle_closed(self):
-        pass #need to remove the session and player info from the list and do all of the standard closing things to make this happen ALSO, THIS FUNCTION NEEDS TO GO INTO THE VARIOUS ASYNC_CHAT OBJECTS, THIS HAPPENS HERE WHEN THE SERVER SHUTS DOWN AT THE END OF THE GAME
+class WorldServ(Telnet):
 
-    def handle_read(self):
-        pass #I'm really just kinda creating an interface here, aren't I?
+    mode = "AskNew"
 
-    #here's something to think about: the session objects for players, why don't I just make them extended async_chat objects? that way, I can hold all of the player info and trust them to take care of themselves when the player sends an action/connects/quits/whatever. There's probably some reason this is going to fail horibly, but I'll worry about that when I get there since nothing seems to come to mind right now about how things could go wrong...
+    def __init__(self, game):
+        self.game = game
+        self.userpass = {}
+
+    def welcomeMessage(self):
+        return "Welcome to Arbitrage!"
+
+    def loginPrompt(self):
+        return "Are you a new player? (yes/no) "
+
+    def connectionLost(self, reason):
+        if self.username in self.game.userinfo:
+            self.game.userinfo[self.name][0] = False
+
+    def telnet_AskNew(self, new):
+        if new is "yes":
+            self.write("Welcome! Please choose a username: ")
+            return "NewName"
+        elif new is "no":
+            self.write("Username: ")
+            return "User"
+        else:
+            return
+
+    def telnet_NewName(self, name):
+        if name in self.userpass:
+            self.write("That username is already in use. Please choose another: ")
+            return
+        self.username = name
+        self.write(IAC + WILL + ECHO + "Choose a password (min. length 3 chars): ")
+        return "NewPassOne"
+
+    def telnet_NewPassOne(self, pswd):
+        if len(pswd) < 3:
+            self.write("Password too short. Please choose another: ")
+            return
+        self.newpass = pswd
+        self.write("Enter it again to confirm: ")
+        return "NewPassTwo"
+
+    def telnet_NewPassTwo(self, pswd):
+        if pswd != self.pswd:
+            self.write("Passwords don't match. Please try again: ")
+            return "NewPassOne"
+        self.write(IAC + WONT + ECHO + "*****\r\n")
+        self.userpass[self.username] = pswd
+        self.game.newuser(self.username)
+        self.write(self.game.userwelcome)
+        self.loggedIn()
+        return "Command"
+
+    def telnet_Command(self, cmd):
+        self.write(self.game.actiontaken(self.username, cmd))
+        return
+
+    def loggedIn(self):
+        self.write(self.game.userinfo[self.username].state)
+        return "Command"
 
 #=====Session class=====
+#class Session(asynchat.async_chat):
+#
+#    def __init__(self, sock, addr):
+#        asynchat.async_chat.__init__(self, sock=sock)
+#        self.addr = addr
+#        self.ibuffer = list()
+#        self.obuffer = b""
+#        self.set_terminator(b"\r\n\r\n")
+#        self.username = None
+#
+#    def collect_incoming_data(self, data):
+#        self.ibuffer.append(data)
+#
+#    def found_terminator(self):
+#        if self.loggedin: #hmm...how to get this out to the module...or maybe ignore it and just trust the select in the loop() to handle it and take care of things from outside the Session
+
+#=====Player class=====
 class Player:
     
-    def __init__(self, playerID, playerName, location, turns, money):
-        self.playerID = playerID
+    def __init__(self, playerName): #int, string, area/node, int, int
         self.playerName = playerName
-        self.location = location
-        self.turns = turns
-        self.money = money
+        self.location = 0
+        self.turns = 50
+        self.money = 200
         self.resourcelist = [0,0,0] #this might take some rethinking...
         self.freeholds = 50 #default, this is something that will be changable with upgrades (eventually)
         self.state = "" #this holds the last message that was sent to the player
