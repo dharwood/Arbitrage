@@ -15,10 +15,11 @@ from twisted.internet import reactor
 #=====Area class=====
 class Area:
     
-    def __init__(self, nodes, objects, connections): #list, list, list
-        self.nodes = nodes.split(',')
-        self.objects = objects.split(',')
-        self.connections = connections.split(',')
+    def __init__(self, idnum): #int
+        self.idnum = idnum
+        self.nodes = []
+        self.objects = [] #not that I've got objects working yet...
+        self.connections = []
 
     def buildactions(self, turns):
         out = list()
@@ -35,12 +36,13 @@ class Area:
 
 class Node:
 
-    def __init__(self, ntype, name, buyrates, sellrates, size):#int, string, dict, dict, int
+    def __init__(self, idnum, ntype, name, buyrates, sellrates, size):#int, int, string, dict, dict, int
         self.ntype = ntype
         self.name = name
         self.buyrates = buyrates
         self.sellrates = sellrates
         self.size = size
+        self.idnum = idnum
 
 #nodeinfofile = open("nodeinfo") #this is just a placeholder for now, will be chnaged when the configuration stuff is done
 
@@ -92,7 +94,7 @@ class WorldServ(Telnet):
 
     def connectionLost(self, reason):
         if self.username in self.game.userinfo:
-            self.game.userinfo[self.name][0] = False
+            self.game.userinfo[self.name].active = False
 
     def telnet_AskNew(self, new):
         if new is "yes":
@@ -125,7 +127,7 @@ class WorldServ(Telnet):
             self.write("Passwords don't match. Please try again: ")
             return "NewPassOne"
         self.write(IAC + WONT + ECHO + "*****\r\n")
-        self.userpass[self.username] = pswd
+        self.userpass[self.username] = pswd #I'm pretty sure this is anti-security here, but since I'm just dealing with telnet...
         self.game.newuser(self.username)
         self.write(self.game.userwelcome)
         self.loggedIn()
@@ -138,6 +140,14 @@ class WorldServ(Telnet):
     def loggedIn(self):
         self.write(self.game.userinfo[self.username].state)
         return "Command"
+
+class WorldServFactory(Factory):
+    
+    def __init__(self, game):
+        self.game = Game() #this is blatently non-functional...for now
+
+    def buildProtocol(self, addr):
+        return WorldServ(self.game)
 
 #=====Session class=====
 #class Session(asynchat.async_chat):
@@ -168,6 +178,7 @@ class Player:
         self.freeholds = 50 #default, this is something that will be changable with upgrades (eventually)
         self.state = "" #this holds the last message that was sent to the player
         self.message = "" #small response to the player doing something that doesn't need everything redone ("Insufficient funds", for example)
+        self.actions = ""
 
 #=====functions=====
 #def __init__(self):
@@ -185,11 +196,11 @@ class Player:
 #    return users
 
 def buildactions(player):
-    location = activeloc[player.loc]
+    location = self.activeloc[player.loc]
     #need to go through every object, node, and connection in the area (or just allow for purchasing or leaving if at a node) in order to make this work. there's also the non-loaction specific stuff (send messages, open menu, etc), but I think most of that goes into a different function(s)
     actions = location.buildactions(player.turns) #this should be a list of tuples with format ("identifier", "description")
     actions.append(player.buildactions()) #I know I'm breaking the standard of making pulling info as "getfoo" but I want to use getactions to retrieve the list of actions that's already built, not build the new list of actions
-    player.setactions(actions)
+    player.actions = actions
     #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
 
 def performactions(player, action):
@@ -201,7 +212,6 @@ def performactions(player, action):
         resourceexcahnge(player, int(action[3:4]), int(action[4:]), False)
     else:
         actionlists.perform(player.getaction(action), player) #this line currently does nothing (all of the core actions are here in the engine, and there's nothing else implemented yet)
-    #OK, so, given that the action lists aren't really supposed to have access the specific player performing the action, is there a way I can pull out the action that I want to have happen rather than trying to call that code in place? is there something with virtual functions or lambda calculus I can use?
     pass #gonna have to work more on this...
 
 #I'm putting some actions that are tied to nodes and areas (moving, buying, selling) here into the engine. As object and other features are implemented, actions for them can be placed in other areas
