@@ -7,9 +7,10 @@
 #copy of the license at http://opensource.org/licenses/MIT
 #####
 
-import sys, time, random, threading
+import sys, time, random
+from threading import Timer
 from twisted.internet.protocol import Factory
-from twisted.protocols.telnet import Telnet
+import twisted.protocols.telnet
 from twisted.internet import reactor
 
 #=====Area class=====
@@ -20,6 +21,7 @@ class Area:
         self.nodes = []
         self.objects = [] #not that I've got objects working yet...
         self.connections = []
+        self.players = []
 
     def buildactions(self, turns):
         out = list()
@@ -36,71 +38,55 @@ class Area:
 
 class Node:
 
-    def __init__(self, idnum, ntype, name, buyrates, sellrates, size):#int, int, string, dict, dict, int
+    def __init__(self, idnum, area, ntype, name, buyrates, sellrates):#int, int, string, dict, dict
         self.ntype = ntype
         self.name = name
         self.buyrates = buyrates
         self.sellrates = sellrates
-        self.size = size
+        self.size = 10 #this will be changed later
         self.idnum = idnum
+        self.area = area
+        self.players = []
 
-#nodeinfofile = open("nodeinfo") #this is just a placeholder for now, will be chnaged when the configuration stuff is done
-
-#this would be where the thing to generate a node belongs, depending on parameters in the nodeinfo file
-#...though, come to think of it, this might be better served by being in the world building section, and leave in-game node creation to a different part of the code
-#that way, I only have to read in the file once, and it's one less thing to worry about having to import or deal with from another file
-
-#=====Server class=====
-#class Server(asyncore.dispatcher):
-#
-#    def __init__(self, host, port):
-#        asyncore.dispatcher.__init__(self)
-#        self.inputbuf = list()
-#        self.set_terminator(b"\r\n\r\n")
-#        self.create_socket(socket.AF_INET, socket.SOCK_STREAM)
-#        self.set_reuse_addr()
-#        self.bind((host, port))
-#        self.listen(5)
-#
-#    def handle_accepted(self, sock, addr):
-#        login = Session()
-#        self.loggingin.append(Session())
-#        pass #need to do stuff here, too, and this area is for dealing with incoming connections
-#    #here's what needs to happen for this part: get player info, create a session object, make sure the player socket is in the map, store everything and put it to use as needed
-#
-#    def handle_closed(self):
-#        pass #need to remove the session and player info from the list and do all of the standard closing things to make this happen ALSO, THIS FUNCTION NEEDS TO GO INTO THE VARIOUS ASYNC_CHAT OBJECTS, THIS HAPPENS HERE WHEN THE SERVER SHUTS DOWN AT THE END OF THE GAME
-#
-#    def handle_read(self):
-#        pass #I'm really just kinda creating an interface here, aren't I?
-
-#forget this. python 3 support or no, I'm moving to using Twisted
+    def buildactions(self):
+        out = list()
+        for x in buyrates:
+            out.append(("buy" + str(buyrates.index(x)) + "1", "Buy Resource " + str(buyrates.index(x))))
+        for y in sellrates:
+            out.append(("sel" + str(sellrates.index(x)) + "1", "Sell Resource " + str(sellrates.index(x))))
+        out.append(("loc" + self.area, "Leave node"))
 
 #=====WorldServ class=====
 
-class WorldServ(Telnet):
+class WorldServ(twisted.protocols.telnet.Telnet):
 
     mode = "AskNew"
+    username = ""
 
     def __init__(self, game):
         self.game = game
-        self.userpass = {}
+        self.userpass = dict()
+        t = Timer(game.gamelength, endgame)
 
     def welcomeMessage(self):
-        return "Welcome to Arbitrage!"
+        return "Welcome to Arbitrage!\n"
 
     def loginPrompt(self):
         return "Are you a new player? (yes/no) "
 
     def connectionLost(self, reason):
         if self.username in self.game.userinfo:
-            self.game.userinfo[self.name].active = False
+            self.game.userinfo[self.username].active = False
+
+    def endgame(self):
+        self.game.gameend()
+        self.mode = "Done"
 
     def telnet_AskNew(self, new):
-        if new is "yes":
+        if new == "yes":
             self.write("Welcome! Please choose a username: ")
             return "NewName"
-        elif new is "no":
+        elif new == "no":
             self.write("Username: ")
             return "User"
         else:
@@ -111,22 +97,22 @@ class WorldServ(Telnet):
             self.write("That username is already in use. Please choose another: ")
             return
         self.username = name
-        self.write(IAC + WILL + ECHO + "Choose a password (min. length 3 chars): ")
+        self.write(twisted.protocols.telnet.IAC + twisted.protocols.telnet.WILL + twisted.protocols.telnet.ECHO + "Choose a password (min. length 3 chars): ")
         return "NewPassOne"
 
     def telnet_NewPassOne(self, pswd):
         if len(pswd) < 3:
-            self.write("Password too short. Please choose another: ")
+            self.write("\r\nPassword too short. Please choose another: ")
             return
         self.newpass = pswd
-        self.write("Enter it again to confirm: ")
+        self.write("\r\nEnter it again to confirm: ")
         return "NewPassTwo"
 
     def telnet_NewPassTwo(self, pswd):
-        if pswd != self.pswd:
-            self.write("Passwords don't match. Please try again: ")
+        if pswd != self.newpass:
+            self.write("\r\nPasswords don't match. Please try again: ")
             return "NewPassOne"
-        self.write(IAC + WONT + ECHO + "*****\r\n")
+        self.write(twisted.protocols.telnet.IAC + twisted.protocols.telnet.WONT + twisted.protocols.telnet.ECHO + "*****\r\n")
         self.userpass[self.username] = pswd #I'm pretty sure this is anti-security here, but since I'm just dealing with telnet...
         self.game.newuser(self.username)
         self.write(self.game.userwelcome)
@@ -134,37 +120,42 @@ class WorldServ(Telnet):
         return "Command"
 
     def telnet_Command(self, cmd):
-        self.write(self.game.actiontaken(self.username, cmd))
-        return
+        if cmd.startswith("ServComm;"):
+            commlist = cmd.split(";") #this can be easily manipulated to cause bad things to happen. I'll worry about that after I get core functionality working
+            self.mini = int(commlist[2])
+            self.maxi = int(commlist[3])
+            self.write(commlist[4])
+            return commlist[1]
+        else:
+            self.write(self.game.actiontaken(self.username, cmd))
+            return
+
+    def telnet_AskNum(self, num):
+        if num.isdigit() and (num >= self.mini and num <= self.maxi):
+            self.write(getattr(self.game, self.numaction)(self.username, num))
+            return "Command"
+        else:
+            return
+
+    def telnet_AskStr(self, string):
+        if len(string) >= self.mini and len(string) <= self.maxi:
+            self.write(getattr(self.game, self.straction)(self.username, string))
+            return "Command"
+        else:
+            return
 
     def loggedIn(self):
         self.write(self.game.userinfo[self.username].state)
+        self.write(self.game.userinfo[self.username].actiondesc)
         return "Command"
 
 class WorldServFactory(Factory):
     
     def __init__(self, game):
-        self.game = Game() #this is blatently non-functional...for now
+        self.game = Game(5, 600) #this is blatently non-functional...for now
 
     def buildProtocol(self, addr):
         return WorldServ(self.game)
-
-#=====Session class=====
-#class Session(asynchat.async_chat):
-#
-#    def __init__(self, sock, addr):
-#        asynchat.async_chat.__init__(self, sock=sock)
-#        self.addr = addr
-#        self.ibuffer = list()
-#        self.obuffer = b""
-#        self.set_terminator(b"\r\n\r\n")
-#        self.username = None
-#
-#    def collect_incoming_data(self, data):
-#        self.ibuffer.append(data)
-#
-#    def found_terminator(self):
-#        if self.loggedin: #hmm...how to get this out to the module...or maybe ignore it and just trust the select in the loop() to handle it and take care of things from outside the Session
 
 #=====Player class=====
 class Player:
@@ -174,89 +165,125 @@ class Player:
         self.location = 0
         self.turns = 50
         self.money = 200
-        self.resourcelist = [0,0,0] #this might take some rethinking...
+        self.resourcelist = [0,0,0,0] #this might take some rethinking...
         self.freeholds = 50 #default, this is something that will be changable with upgrades (eventually)
         self.state = "" #this holds the last message that was sent to the player
         self.message = "" #small response to the player doing something that doesn't need everything redone ("Insufficient funds", for example)
-        self.actions = ""
+        self.actions = [] #holds the list of actions that a player may perform at any given time
+        self.active = True
+    
+    def buildactions(self):
+        return #this will come later
 
-#=====functions=====
-#def __init__(self):
-#    self.activeusers = list() #this might change, depending on how (if?) I decide to store nodes in memory
-#    self.activeareas = dict() #areaID -> area def
-#    self.activenodes = dict() #objectID -> object def
-#    self.activeloc = dict() #locationID -> location def
+    def actiondesc(self):
+        out = ""
+        for i in actions:
+            out += i[1] + "\r\n"
+        return "Availaible actions:\r\n\r\n" + out
 
-#def addplayer(users, player):#this whole function needs some more work since I'm not using sql to store player info anymore but am instead using memory, can store player info in a dict when they're not active (and, for that matter, a dict when they are), now that I think about it, do I really need to have an activeplayers list? it would probably still be good to have something set up to keep track of who is logged in and who isn't to keep users from trying to manipulate other people's accounts
-#    users.append(player)
-#    return users
+class Game:
 
-#def removeplayer(users, player): #it feels like there should be more to this, but if everything is starting out instantiated, then maybe not
-#    users.remove(player)
-#    return users
+    userwelcome = "Hi!\r\n"
+    userinfo = {}
+    locations = {}
 
-def buildactions(player):
-    location = self.activeloc[player.loc]
-    #need to go through every object, node, and connection in the area (or just allow for purchasing or leaving if at a node) in order to make this work. there's also the non-loaction specific stuff (send messages, open menu, etc), but I think most of that goes into a different function(s)
-    actions = location.buildactions(player.turns) #this should be a list of tuples with format ("identifier", "description")
-    actions.append(player.buildactions()) #I know I'm breaking the standard of making pulling info as "getfoo" but I want to use getactions to retrieve the list of actions that's already built, not build the new list of actions
-    player.actions = actions
-    #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
+    def __init__(self, size, time):
+        print "starting game of " + str(size) + " areas for " + str(time) + " seconds"
+        for i in range(size):
+            print "Creating area " + str(i)
+            a = Area(i)
+            for j in range(random.randint(0,3)):
+                print "Creating node " + str(j) + " in area " + str(i)
+                n = Node(10000 + (100*i) + j, random.randint(0,3), a.idnum, "Node " + str(i) + "-" +str(j), {"1":1, "2":1, "3":1, "4":1}, {"1":1, "2":1, "3":1, "4":1})
+                #those are lame buy/sell rates. fine for an alpha, though
+                a.nodes.append(n)
+                self.locations[str(n.idnum)] = n
+            conns = range(size)
+            conns.remove(i)
+            for k in range(int(size / random.randint(2,4))):
+                del conns[random.randint(0, len(conns) - 1 )]
+            print "creating connections to " + str(conns)
+            a.connections = conns
+            self.locations[str(a.idnum)] = a
+            self.gamelength = time
+        print "starting turnadd timer"
+        t = Timer(900.0, self.turnadd)
+        t.start()
+        print "starting game length timer"
+        u = Timer(3600.0, self.priceupdate)
+        u.start()
+        print "Game initialization complete"
 
-def performactions(player, action):
-    if action.startswith('loc'): #when changing location
-        changeloc(player, int(action[3:]))
-    elif action.startswith('buy'):
-        resourceexchange(player, int(action[3:4]), int(action[4:]), True)
-    elif action.startswith('sel'):
-        resourceexcahnge(player, int(action[3:4]), int(action[4:]), False)
-    else:
-        actionlists.perform(player.getaction(action), player) #this line currently does nothing (all of the core actions are here in the engine, and there's nothing else implemented yet)
-    pass #gonna have to work more on this...
+    def buildactions(self, name):
+        actions = self.userinfo[name].location.buildactions() #this should be a list of tuples with format ("identifier", "description")
+        actions.append(self.userinfo[name].buildactions())
+        self.userinfo[name].actions = actions
+        #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
 
-#I'm putting some actions that are tied to nodes and areas (moving, buying, selling) here into the engine. As object and other features are implemented, actions for them can be placed in other areas
-def changelocation(player, movingto):
-    locID = player.loc
-    player.loc = movingto
-    activeloc[locID].remove(player)
-    activeloc[locID].append(player)
+    def performactions(self, player, action):
+        if action.startswith('loc'): #when changing location
+            player.state = changeloc(player, int(action[3:]))
+        elif action.startswith('buy'):
+            player.state = resourceexchange(player, int(action[3:4]), int(action[4:]), True)
+        elif action.startswith('sel'):
+            player.state = resourceexchange(player, int(action[3:4]), int(action[4:]), False)
+        else:
+            player, location, state = getattr(actions, player.actions[action])(player, location[player.location]) #this line currently does nothing (all of the core actions are here and there's nothing else implemented yet)
+        self.buildactions(player) #gonna have to work more on this...
+    
+    def priceupdate(self):
+        for i in areas:
+            for j in i.nodes:
+                pass #this is where the price updating logic goes, skip it for the first release (couldn't come up with an algorithm I liked...)
+        t = Timer(3600.0, priceupdate) #every hour, update prices
+        t.start()
 
-def resourceexchange(player, resource, number, buying):
-    #hmm, I wonder how python will like just going "location.changeprice" That seems like it should fail, but it might not...
-    if buying: #buying resources from the node
-        if number > player.freeholds:
-            return "Insufficient Space"
-        if player.money < (activeloc[player.loc].buyprice[resource] * number):
-            return "Insufficient Funds"
-        player.resourcelist[resource] += number
-        player.freeholds -= number
-        player.money -= (activeloc[player.loc].buyprice[resource] * number)
-        activeloc[player.loc].pricechange(resource, number)
-    else: #selling resources to the node
-        if number > player.resourcelist[resource]:
-            return "Insufficient Supply"
-        player.resourcelist[resource] -= number
-        player.freeholds += number
-        player.money += (activeloc[player.loc].sellprice[resource] * number)
-        activeloc[player.loc.pricechange(resource * -1, number)]
+    def turnadd(self):
+        for i in self.userinfo.keys():
+            self.userinfo[i].turns += 1
+        t = Timer(900.0, turnadd) #every 15 minutes, add turns
+        t.start()
 
-def priceupdate():
-    for i in areas:
-        for j in i.nodes:
-            pass #this is where the price updating logic goes
-    t = Timer(3600.0, priceupdate)
-    t.start()
+    def gameend(self):
+        pass #right now, there's not much to the game ending. It can be changed to dump info out at the end, or something to that effect later
 
-def turnadd():
-    for i in players:
-        i.turns += 1
-    t = Timer(900.0, turnadd) #every 15 minutes, add turns
-    t.start()
+    def newuser(self,name):
+        p = Player(name)
+        p.state = "You are now in area 0.\r\n"
+        p.actiondesc, p.actions = self.buildactions(p)
+        self.userinfo[name] = p
+        self.locations[str(p.location)].players.append(name)
 
-if __name__ == '__main__': pass
-#    for i in range(50): #this seems like a good number to start with
-        #steps here: generate area, generate 0-3 (-ish) nodes in that area, then build in...oh let's say 5-10 connections to other areas (should I worry about areas being unreachable? could go through and do a count after the first run)
- #       a = area.area()
- #       for j in random.randrange(3): #this is where the 0-3 nodes are created and placed in the area
- #           n = node.node(random.randint(0,3),"Node " + str(i) + "-" + str(j), )
- #       asyncore.loop() #to get the server running and get the game going
+    #I'm putting some actions that are tied to nodes and areas (moving, buying, selling) here for now. As object and other features are implemented, actions for them can be placed in other areas
+    def changeloc(player, movingto):
+        locID = player.loc
+        player.loc = movingto
+        locations[locID].remove(player)
+        locations[movingto].append(player)
+
+    def resourceexchange(player, resource, number, buying):
+        #hmm, I wonder how python will like just going "location.changeprice" That seems like it should fail, but it might not...
+        if buying: #buying resources from the node
+            if number > player.freeholds:
+                return "Insufficient Space"
+            if player.money < (activeloc[player.loc].buyprice[resource] * number):
+                return "Insufficient Funds"
+            player.resourcelist[resource] += number
+            player.freeholds -= number
+            player.money -= (activeloc[player.loc].buyprice[resource] * number)
+            #activeloc[player.loc].pricechange(resource, number)
+        else: #selling resources to the node
+            if number > player.resourcelist[resource]:
+                return "Insufficient Supply"
+            player.resourcelist[resource] -= number
+            player.freeholds += number
+            player.money += (activeloc[player.loc].sellprice[resource] * number)
+            #activeloc[player.loc.pricechange(resource * -1, number)]
+        self.userinfo[player.name] = player
+
+
+
+if __name__ == '__main__':
+    reactor.listenTCP(8090, WorldServFactory(Game(5, 10)))
+    reactor.run()
+
