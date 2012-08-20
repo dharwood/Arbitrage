@@ -1,11 +1,17 @@
 Copyright (c) 2012 David Harwood
 
-Arbitrage is a system for building trading simulation games. The project was inspired by TradeWars 2002, an old and successful trading simulation game set in a semi-Star Trek universe. This project was started in the Summer of 2012 as a project for the Open Source Development class at Portland State University.
+Arbitrage is a system for building trading simulation games. The project was inspired by TradeWars 2002, an old and successful trading simulation game set in a semi-Star Trek universe. This project was started in the Summer of 2012 as a project for the Open Source Development class at Portland State University. If you would liek to work on the project, the code base can be found at https://github.com/dharwood/Arbitrage/
 
 Building the project:
-Since Arbitrage is written in python, there's very little setup that needs to be done to make the system install and run. One thing that does need to be done, though, is to run the configuration script to handle the setup and installation
+To run this program, users will need Python 2.7 (NOT python 3) and Twisted 12.1.0 or later. Once the pre-requisites are installed, enter the directory that Arbitrage is in and enter the command `python arbitrage.py`. Arbitrage will set up the server and begin listening for telnet connections. By default, Arbitrage listens on port 8090 of localhost, and runs for one month.
 
-...or, rather, that's what's going to happen. Right now, there's nothing here yet. We all gotta start somewhere, right?
+Playing the game:
+The game is entirely menu-driven. For each menu the player encounters, they need enter the number next to the action they would like to perform. The game is set to run for a specific amount of time, then end, with the player who has the most money at the end being declared the winner. From here, the host is free to begin another round of the game.
 
+Customization:
+Currently, customization is not supported. At a later time, however, it will be possible to apply a "skin" to change the theme of the game.
+
+Known Bugs:
+There are plenty of bugs roaming around at the moment. It's still early in the project's life. The primary one to be aware of, though, is that users who disconnect are currently unable to log back in, so disconnecting is essentially the same as burning the account.
 
 This code is licensed under the terms of the MIT license. You should have received a copy of this license in an included file named COPYING. If you did not receive this file, you may obtain a copy of the license at http://opensource.org/licenses/MIT

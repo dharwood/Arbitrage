@@ -12,22 +12,24 @@ from threading import Timer
 from twisted.internet.protocol import Factory
 import twisted.protocols.telnet
 from twisted.internet import reactor
+#from . import actions
 
 #=====Area class=====
 class Area:
     
     def __init__(self, idnum): #int
         self.idnum = idnum
+        self.name = idnum #for simplicity's sake
         self.nodes = []
         self.objects = [] #not that I've got objects working yet...
         self.connections = []
         self.players = []
 
-    def buildactions(self, turns):
+    def buildactions(self):
         out = list()
-        for x in nodes:
+        for x in self.nodes:
             out.append(("loc" + str(x.idnum), "Enter node " + x.name))
-        for y in connections:
+        for y in self.connections:
             out.append(("loc" + str(y), "Go to area " + str(y)))
         return out
 
@@ -50,11 +52,12 @@ class Node:
 
     def buildactions(self):
         out = list()
-        for x in buyrates:
-            out.append(("buy" + str(buyrates.index(x)) + "1", "Buy Resource " + str(buyrates.index(x))))
-        for y in sellrates:
-            out.append(("sel" + str(sellrates.index(x)) + "1", "Sell Resource " + str(sellrates.index(x))))
-        out.append(("loc" + self.area, "Leave node"))
+        for x in self.buyrates.keys():
+            out.append(("buy" + x + "1", "Buy Resource " + x))
+        for y in self.sellrates.keys():
+            out.append(("sel" + y + "1", "Sell Resource " + y))
+        out.append(("loc" + str(self.area), "Leave node"))
+        return out
 
 #=====WorldServ class=====
 
@@ -63,10 +66,11 @@ class WorldServ(twisted.protocols.telnet.Telnet):
     mode = "AskNew"
     username = ""
 
-    def __init__(self, game):
+    def __init__(self, game, userpass):
         self.game = game
-        self.userpass = dict()
-        t = Timer(game.gamelength, endgame)
+        self.userpass = userpass
+        print "WorldServ initialized"
+        t = Timer(game.gamelength, self.endgame)
 
     def welcomeMessage(self):
         return "Welcome to Arbitrage!\n"
@@ -127,7 +131,8 @@ class WorldServ(twisted.protocols.telnet.Telnet):
             self.write(commlist[4])
             return commlist[1]
         else:
-            self.write(self.game.actiontaken(self.username, cmd))
+            self.write(self.game.performactions(self.username, cmd))
+            self.write(self.game.userinfo[self.username].actiondesc())
             return
 
     def telnet_AskNum(self, num):
@@ -146,23 +151,24 @@ class WorldServ(twisted.protocols.telnet.Telnet):
 
     def loggedIn(self):
         self.write(self.game.userinfo[self.username].state)
-        self.write(self.game.userinfo[self.username].actiondesc)
+        self.write(self.game.userinfo[self.username].actiondesc())
         return "Command"
 
 class WorldServFactory(Factory):
     
     def __init__(self, game):
-        self.game = Game(5, 600) #this is blatently non-functional...for now
+        self.game = Game(5, 600)
+        self.userpass = dict()
 
     def buildProtocol(self, addr):
-        return WorldServ(self.game)
+        return WorldServ(self.game, self.userpass)
 
 #=====Player class=====
 class Player:
     
     def __init__(self, playerName): #int, string, area/node, int, int
-        self.playerName = playerName
-        self.location = 0
+        self.name = playerName
+        self.location = "0"
         self.turns = 50
         self.money = 200
         self.resourcelist = [0,0,0,0] #this might take some rethinking...
@@ -177,8 +183,10 @@ class Player:
 
     def actiondesc(self):
         out = ""
-        for i in actions:
-            out += i[1] + "\r\n"
+        listnum = 1
+        for i in self.actions:
+            out += str(listnum) + ". " + i[1] + "\r\n"
+            listnum += 1
         return "Availaible actions:\r\n\r\n" + out
 
 class Game:
@@ -188,12 +196,9 @@ class Game:
     locations = {}
 
     def __init__(self, size, time):
-        print "starting game of " + str(size) + " areas for " + str(time) + " seconds"
         for i in range(size):
-            print "Creating area " + str(i)
             a = Area(i)
             for j in range(random.randint(0,3)):
-                print "Creating node " + str(j) + " in area " + str(i)
                 n = Node(10000 + (100*i) + j, random.randint(0,3), a.idnum, "Node " + str(i) + "-" +str(j), {"1":1, "2":1, "3":1, "4":1}, {"1":1, "2":1, "3":1, "4":1})
                 #those are lame buy/sell rates. fine for an alpha, though
                 a.nodes.append(n)
@@ -202,37 +207,39 @@ class Game:
             conns.remove(i)
             for k in range(int(size / random.randint(2,4))):
                 del conns[random.randint(0, len(conns) - 1 )]
-            print "creating connections to " + str(conns)
             a.connections = conns
             self.locations[str(a.idnum)] = a
-            self.gamelength = time
-        print "starting turnadd timer"
+        self.gamelength = time
         t = Timer(900.0, self.turnadd)
         t.start()
-        print "starting game length timer"
         u = Timer(3600.0, self.priceupdate)
         u.start()
-        print "Game initialization complete"
 
     def buildactions(self, name):
-        actions = self.userinfo[name].location.buildactions() #this should be a list of tuples with format ("identifier", "description")
-        actions.append(self.userinfo[name].buildactions())
+        player = self.userinfo[name]
+        actions = self.locations[str(player.location)].buildactions() #this should be a list of tuples with format ("identifier", "description")
+        #actions.append(self.userinfo[name].buildactions()) #this is out for now
         self.userinfo[name].actions = actions
         #pass #so here, I need to go through the list of stuff in the player's location and determine what all of the possible actions are, then give (or return?) that list to the player
 
-    def performactions(self, player, action):
-        if action.startswith('loc'): #when changing location
-            player.state = changeloc(player, int(action[3:]))
-        elif action.startswith('buy'):
-            player.state = resourceexchange(player, int(action[3:4]), int(action[4:]), True)
-        elif action.startswith('sel'):
-            player.state = resourceexchange(player, int(action[3:4]), int(action[4:]), False)
+    def performactions(self, playername, action):
+        info = self.userinfo
+        comm = info[playername].actions[int(action) - 1][0]
+        print "comm is " + comm
+        if comm.startswith('loc'): #when changing location
+            info[playername].state = self.changeloc(info[playername], comm.lstrip('clo'))
+        elif comm.startswith('buy'):
+            info[playername].state = self.resourceexchange(info[playername], int(comm[3:4]), int(comm[4:]), True)
+        elif comm.startswith('sel'):
+            info[playername].state = self.resourceexchange(info[playername], int(comm[3:4]), int(comm[4:]), False)
         else:
-            player, location, state = getattr(actions, player.actions[action])(player, location[player.location]) #this line currently does nothing (all of the core actions are here and there's nothing else implemented yet)
-        self.buildactions(player) #gonna have to work more on this...
+            pass
+            #player, location, state = getattr(actions, player.actions[action])(player, location[player.location]) #this line currently does nothing (all of the core actions are here and there's nothing else implemented yet)
+        self.buildactions(playername) #gonna have to work more on this...
+        return info[playername].state
     
     def priceupdate(self):
-        for i in areas:
+        for i in self.areas:
             for j in i.nodes:
                 pass #this is where the price updating logic goes, skip it for the first release (couldn't come up with an algorithm I liked...)
         t = Timer(3600.0, priceupdate) #every hour, update prices
@@ -250,34 +257,39 @@ class Game:
     def newuser(self,name):
         p = Player(name)
         p.state = "You are now in area 0.\r\n"
-        p.actiondesc, p.actions = self.buildactions(p)
         self.userinfo[name] = p
+        print "building actions"
+        self.buildactions(name)
         self.locations[str(p.location)].players.append(name)
 
     #I'm putting some actions that are tied to nodes and areas (moving, buying, selling) here for now. As object and other features are implemented, actions for them can be placed in other areas
-    def changeloc(player, movingto):
-        locID = player.loc
-        player.loc = movingto
-        locations[locID].remove(player)
-        locations[movingto].append(player)
+    def changeloc(self, player, movingto):
+        locID = player.location
+        player.location = movingto
+        self.locations[locID].players.remove(player.name)
+        self.locations[movingto].players.append(player.name)
+        self.userinfo[player.name] = player
+        return "You are now at " + str(self.locations[movingto].name) + "\r\n"
 
-    def resourceexchange(player, resource, number, buying):
+    def resourceexchange(self, player, resource, number, buying):
         #hmm, I wonder how python will like just going "location.changeprice" That seems like it should fail, but it might not...
         if buying: #buying resources from the node
             if number > player.freeholds:
                 return "Insufficient Space"
-            if player.money < (activeloc[player.loc].buyprice[resource] * number):
+            if player.money < (self.locations[str(player.location)].buyrates[str(resource)] * number):
                 return "Insufficient Funds"
             player.resourcelist[resource] += number
             player.freeholds -= number
-            player.money -= (activeloc[player.loc].buyprice[resource] * number)
+            player.money -= (self.locations[str(player.location)].buyrates[str(resource)] * number)
+            return "You bought " + str(number) + " of " + str(resource) + " for " + str(self.locations[str(player.location)].buyrates[str(resource)] * number)
             #activeloc[player.loc].pricechange(resource, number)
         else: #selling resources to the node
             if number > player.resourcelist[resource]:
                 return "Insufficient Supply"
             player.resourcelist[resource] -= number
             player.freeholds += number
-            player.money += (activeloc[player.loc].sellprice[resource] * number)
+            player.money += (self.locations[str(player.location)].sellrates[str(resource)] * number)
+            return "You sold " + str(number) + " of " + str(resource) + " for " + str(self.locations[str(player.location)].sellrates[str(resource)] * number)
             #activeloc[player.loc.pricechange(resource * -1, number)]
         self.userinfo[player.name] = player
 
